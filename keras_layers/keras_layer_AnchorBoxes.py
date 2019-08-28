@@ -18,9 +18,9 @@ limitations under the License.
 
 from __future__ import division
 import numpy as np
-import keras.backend as K
-from keras.engine.topology import InputSpec
-from keras.engine.topology import Layer
+import tensorflow.keras.backend as K
+from tensorflow.keras.layers import InputSpec
+from tensorflow.keras.layers import Layer
 
 from bounding_box_utils.bounding_box_utils import convert_coordinates
 
@@ -47,8 +47,7 @@ class AnchorBoxes(Layer):
     rather than to predict absolute box coordinates directly is explained in `README.md`.
 
     Input shape:
-        4D tensor of shape `(batch, channels, height, width)` if `dim_ordering = 'th'`
-        or `(batch, height, width, channels)` if `dim_ordering = 'tf'`.
+        4D tensor of shape `(batch, height, width, channels)`.
 
     Output shape:
         5D tensor of shape `(batch, height, width, n_boxes, 8)`. The last axis contains
@@ -168,10 +167,11 @@ class AnchorBoxes(Layer):
         wh_list = np.array(wh_list)
 
         # We need the shape of the input tensor
-        if K.image_dim_ordering() == 'tf':
-            batch_size, feature_map_height, feature_map_width, feature_map_channels = x._keras_shape
-        else: # Not yet relevant since TensorFlow is the only supported backend right now, but it can't harm to have this in here for the future
-            batch_size, feature_map_channels, feature_map_height, feature_map_width = x._keras_shape
+        batch_size, feature_map_height, feature_map_width, feature_map_channels = K.int_shape(x)
+        # migrated from:
+        # batch_size, feature_map_height, feature_map_width, feature_map_channels = x._keras_shape
+        # https://stackoverflow.com/questions/54613474/tensorflow-keras-input-layer-does-not-add-keras-shape
+        # https://stackoverflow.com/questions/56816803/whats-the-difference-between-keras-shape-and-shape-for-a-tensor-in-tensorflow
 
         # Compute the grid of box center points. They are identical for all aspect ratios.
 
@@ -255,10 +255,7 @@ class AnchorBoxes(Layer):
         return boxes_tensor
 
     def compute_output_shape(self, input_shape):
-        if K.image_dim_ordering() == 'tf':
-            batch_size, feature_map_height, feature_map_width, feature_map_channels = input_shape
-        else: # Not yet relevant since TensorFlow is the only supported backend right now, but it can't harm to have this in here for the future
-            batch_size, feature_map_channels, feature_map_height, feature_map_width = input_shape
+        batch_size, feature_map_height, feature_map_width, feature_map_channels = input_shape
         return (batch_size, feature_map_height, feature_map_width, self.n_boxes, 8)
 
     def get_config(self):

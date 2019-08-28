@@ -617,6 +617,10 @@ class DataGenerator:
 
             # Loop over all images in this dataset.
             for img in it:
+                # goto next image if image file not existent
+                if not os.path.exists(os.path.join(images_dir, img['file_name'])):
+                    print('%s file not found.'% (os.path.join(images_dir, img['file_name'])))
+                    continue
 
                 self.filenames.append(os.path.join(images_dir, img['file_name']))
                 self.image_ids.append(img['id'])
@@ -1170,8 +1174,7 @@ class DataGenerator:
             if 'inverse_transform' in returns: ret.append(batch_inverse_transforms)
             if 'original_images' in returns: ret.append(batch_original_images)
             if 'original_labels' in returns: ret.append(batch_original_labels)
-
-            yield ret
+            yield tuple(ret)
 
     def save_dataset(self,
                      filenames_path='filenames.pkl',
