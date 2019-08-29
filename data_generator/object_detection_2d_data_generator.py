@@ -215,6 +215,52 @@ class DataGenerator:
         else:
             self.hdf5_dataset = None
 
+
+    def stats(self):
+        '''
+        build stats
+        '''      
+        stats = {}
+
+        for image_index, image_id in enumerate(self.image_ids):
+            image_label_ids = []
+            
+            # create non existing indicies
+            for label_data in self.labels[image_index]:
+                if label_data[self.labels_output_format.index('class_id')] not in stats:
+                    stats[label_data[self.labels_output_format.index('class_id')]] = {
+                        'images': 0,
+                        'objects': 0
+                    }
+                image_label_ids.append(label_data[self.labels_output_format.index('class_id')])
+
+
+            for label_id in list(set(image_label_ids)):
+                stats[label_id]['images'] += 1
+                stats[label_id]['objects'] += image_label_ids.count(label_id)
+            
+        return stats
+
+
+    def __str__(self):
+        '''
+        print some stats
+        '''
+        s = '%-16s %8s %8s\n' % ('category', 'images', 'objects')
+        num_objects = 0
+        for class_index, data in self.stats().items():
+            num_objects += data['objects']
+            if self.classes_to_names and class_index in self.classes_to_names:
+                name = self.classes_to_names[class_index]
+            else:
+                name = class_index
+            s += '%-16s %8i %8i\n' % (self.classes_to_names[class_index], data['images'], data['objects'])
+        s += '\n'
+        s += '%-16s %8i\n' % ('images', len(list(set(self.image_ids))))
+        s += '%-16s %8i\n' % ('objects', num_objects)
+        return s
+
+
     def load_hdf5_dataset(self, verbose=True):
         '''
         Loads an HDF5 dataset that is in the format that the `create_hdf5_dataset()` method
@@ -539,6 +585,7 @@ class DataGenerator:
         if ret:
             return self.images, self.filenames, self.labels, self.image_ids, self.eval_neutral
 
+
     def parse_json(self,
                    images_dirs,
                    annotations_filenames,
@@ -577,6 +624,7 @@ class DataGenerator:
         self.filenames = []
         self.image_ids = []
         self.labels = []
+        self.not_found_images = []
         if not ground_truth_available:
             self.labels = None
 
@@ -593,6 +641,7 @@ class DataGenerator:
         self.classes_to_names.append('background') # Need to add the background class first so that the indexing is right.
         self.cats_to_classes = {} # A dictionary that maps between the original (keys) and the transformed IDs (values)
         self.classes_to_cats = {} # A dictionary that maps between the transformed (keys) and the original IDs (values)
+
         for i, cat in enumerate(annotations['categories']):
             self.cats_to_names[cat['id']] = cat['name']
             self.classes_to_names.append(cat['name'])
@@ -619,7 +668,7 @@ class DataGenerator:
             for img in it:
                 # goto next image if image file not existent
                 if not os.path.exists(os.path.join(images_dir, img['file_name'])):
-                    print('%s file not found.'% (os.path.join(images_dir, img['file_name'])))
+                    self.not_found_images.append(os.path.join(images_dir, img['file_name']))
                     continue
 
                 self.filenames.append(os.path.join(images_dir, img['file_name']))
@@ -665,8 +714,12 @@ class DataGenerator:
                 with Image.open(filename) as image:
                     self.images.append(np.array(image, dtype=np.uint8))
 
+        if len(self.not_found_images) > 0:
+            print('%s images not found.' % (len(self.not_found_images)))
+
         if ret:
             return self.images, self.filenames, self.labels, self.image_ids
+
 
     def create_hdf5_dataset(self,
                             file_path='dataset.h5',
@@ -1221,3 +1274,11 @@ class DataGenerator:
             The number of images in the dataset.
         '''
         return self.dataset_size
+
+    
+    def get_dataset_classes(self):
+        '''
+        Returns:
+            A list of classes used in the dataset.
+        '''
+        return [ 'background' ] + list(self.cats_to_names.values())
