@@ -46,8 +46,8 @@ try:
 except ImportError:
     warnings.warn("'pickle' module is missing. You won't be able to save parsed file lists and annotations as pickled files.")
 
-from ssd_encoder_decoder.ssd_input_encoder import SSDInputEncoder
-from data_generator.object_detection_2d_image_boxes_validation_utils import BoxFilter
+from ..ssd_encoder_decoder.ssd_input_encoder import SSDInputEncoder
+from .object_detection_2d_image_boxes_validation_utils import BoxFilter
 
 class DegenerateBatchError(Exception):
     '''
@@ -254,10 +254,9 @@ class DataGenerator:
                 name = self.classes_to_names[class_index]
             else:
                 name = class_index
-            s += '%-16s %8i %8i\n' % (self.classes_to_names[class_index], data['images'], data['objects'])
+            s += '%-16s %8i %8i\n' % (name, data['images'], data['objects'])
         s += '\n'
-        s += '%-16s %8i\n' % ('images', len(list(set(self.image_ids))))
-        s += '%-16s %8i\n' % ('objects', num_objects)
+        s += '%-16s %8s %8s\n' % ('SUM', len(list(set(self.image_ids))), num_objects)
         return s
 
 
@@ -592,7 +591,8 @@ class DataGenerator:
                    ground_truth_available=False,
                    include_classes='all',
                    ret=False,
-                   verbose=True):
+                   verbose=True,
+                   max_imgs=None):
         '''
         This is an JSON parser for the MS COCO datasets. It might be applicable to other datasets with minor changes to
         the code, but in its current form it expects the JSON format of the MS COCO datasets.
@@ -642,6 +642,9 @@ class DataGenerator:
         self.cats_to_classes = {} # A dictionary that maps between the original (keys) and the transformed IDs (values)
         self.classes_to_cats = {} # A dictionary that maps between the transformed (keys) and the original IDs (values)
 
+        # sort categories by name prevents id missmatching betwenn multiple loaded files
+        annotations['categories'] = sorted(annotations['categories'], key=lambda k: k['name'])
+
         for i, cat in enumerate(annotations['categories']):
             self.cats_to_names[cat['id']] = cat['name']
             self.classes_to_names.append(cat['name'])
@@ -666,6 +669,10 @@ class DataGenerator:
 
             # Loop over all images in this dataset.
             for img in it:
+                # max images are set we have more data than we need
+                if max_imgs is not None and len(self.image_ids) >= max_imgs:
+                    continue
+
                 # goto next image if image file not existent
                 if not os.path.exists(os.path.join(images_dir, img['file_name'])):
                     self.not_found_images.append(os.path.join(images_dir, img['file_name']))
@@ -1281,4 +1288,4 @@ class DataGenerator:
         Returns:
             A list of classes used in the dataset.
         '''
-        return [ 'background' ] + list(self.cats_to_names.values())
+        return list(self.classes_to_names.values())
