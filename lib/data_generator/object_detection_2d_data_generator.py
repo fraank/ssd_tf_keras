@@ -209,7 +209,7 @@ class DataGenerator:
         else:
             self.eval_neutral = None
 
-        if not hdf5_dataset_path is None:
+        if not hdf5_dataset_path is None and os.path.isfile(hdf5_dataset_path):
             self.hdf5_dataset_path = hdf5_dataset_path
             self.load_hdf5_dataset(verbose=verbose)
         else:
@@ -250,7 +250,7 @@ class DataGenerator:
         num_objects = 0
         for class_index, data in self.stats().items():
             num_objects += data['objects']
-            if self.classes_to_names and class_index in self.classes_to_names:
+            if len(self.classes_to_names) >= class_index:
                 name = self.classes_to_names[class_index]
             else:
                 name = class_index
@@ -672,13 +672,16 @@ class DataGenerator:
                 # max images are set we have more data than we need
                 if max_imgs is not None and len(self.image_ids) >= max_imgs:
                     continue
+                
+                # delete params
+                file_name = img['file_name'].split('?')[0]
 
                 # goto next image if image file not existent
-                if not os.path.exists(os.path.join(images_dir, img['file_name'])):
-                    self.not_found_images.append(os.path.join(images_dir, img['file_name']))
+                if not os.path.exists(os.path.join(images_dir, file_name)):
+                    self.not_found_images.append(os.path.join(images_dir, file_name))
                     continue
 
-                self.filenames.append(os.path.join(images_dir, img['file_name']))
+                self.filenames.append(os.path.join(images_dir, file_name))
                 self.image_ids.append(img['id'])
 
                 if ground_truth_available:
@@ -698,7 +701,7 @@ class DataGenerator:
                         # Compute `xmax` and `ymax`.
                         xmax = xmin + width
                         ymax = ymin + height
-                        item_dict = {'image_name': img['file_name'],
+                        item_dict = {'image_name': file_name,
                                      'image_id': img['id'],
                                      'class_id': class_id,
                                      'xmin': xmin,
