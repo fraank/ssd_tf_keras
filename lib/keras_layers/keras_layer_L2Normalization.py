@@ -18,9 +18,11 @@ limitations under the License.
 
 from __future__ import division
 import numpy as np
-import keras.backend as K
-from keras.engine.topology import InputSpec
-from keras.engine.topology import Layer
+import tensorflow as tf
+import tensorflow.keras as keras
+import tensorflow.keras.backend as K
+from tensorflow.keras.layers import InputSpec
+from tensorflow.keras.layers import Layer
 
 class L2Normalization(Layer):
     '''
@@ -33,8 +35,7 @@ class L2Normalization(Layer):
             SSD paper.
 
     Input shape:
-        4D tensor of shape `(batch, channels, height, width)` if `dim_ordering = 'th'`
-        or `(batch, height, width, channels)` if `dim_ordering = 'tf'`.
+        `(batch, height, width, channels)`
 
     Returns:
         The scaled tensor. Same shape as the input tensor.
@@ -44,18 +45,16 @@ class L2Normalization(Layer):
     '''
 
     def __init__(self, gamma_init=20, **kwargs):
-        if K.image_dim_ordering() == 'tf':
-            self.axis = 3
-        else:
-            self.axis = 1
+        self.axis = 3
         self.gamma_init = gamma_init
         super(L2Normalization, self).__init__(**kwargs)
 
     def build(self, input_shape):
         self.input_spec = [InputSpec(shape=input_shape)]
-        gamma = self.gamma_init * np.ones((input_shape[self.axis],))
-        self.gamma = K.variable(gamma, name='{}_gamma'.format(self.name))
-        self.trainable_weights = [self.gamma]
+        self.gamma = self.add_weight(name='{}_gamma'.format(self.name),
+            shape=(input_shape[self.axis],),
+            initializer=keras.initializers.Constant(value=self.gamma_init),
+            trainable=True)
         super(L2Normalization, self).build(input_shape)
 
     def call(self, x, mask=None):

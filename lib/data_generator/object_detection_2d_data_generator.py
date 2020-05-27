@@ -46,8 +46,8 @@ try:
 except ImportError:
     warnings.warn("'pickle' module is missing. You won't be able to save parsed file lists and annotations as pickled files.")
 
-from ssd_encoder_decoder.ssd_input_encoder import SSDInputEncoder
-from data_generator.object_detection_2d_image_boxes_validation_utils import BoxFilter
+from ..ssd_encoder_decoder.ssd_input_encoder import SSDInputEncoder
+from .object_detection_2d_image_boxes_validation_utils import BoxFilter
 
 class DegenerateBatchError(Exception):
     '''
@@ -209,11 +209,56 @@ class DataGenerator:
         else:
             self.eval_neutral = None
 
-        if not hdf5_dataset_path is None:
+        if not hdf5_dataset_path is None and os.path.isfile(hdf5_dataset_path):
             self.hdf5_dataset_path = hdf5_dataset_path
             self.load_hdf5_dataset(verbose=verbose)
         else:
             self.hdf5_dataset = None
+
+
+    def stats(self):
+        '''
+        build stats
+        '''      
+        stats = {}
+
+        for image_index, image_id in enumerate(self.image_ids):
+            image_label_ids = []
+            
+            # create non existing indicies
+            for label_data in self.labels[image_index]:
+                if label_data[self.labels_output_format.index('class_id')] not in stats:
+                    stats[label_data[self.labels_output_format.index('class_id')]] = {
+                        'images': 0,
+                        'objects': 0
+                    }
+                image_label_ids.append(label_data[self.labels_output_format.index('class_id')])
+
+
+            for label_id in list(set(image_label_ids)):
+                stats[label_id]['images'] += 1
+                stats[label_id]['objects'] += image_label_ids.count(label_id)
+            
+        return stats
+
+
+    def __str__(self):
+        '''
+        print some stats
+        '''
+        s = '%-16s %8s %8s\n' % ('category', 'images', 'objects')
+        num_objects = 0
+        for class_index, data in self.stats().items():
+            num_objects += data['objects']
+            if len(self.classes_to_names) >= class_index:
+                name = self.classes_to_names[class_index]
+            else:
+                name = class_index
+            s += '%-16s %8i %8i\n' % (name, data['images'], data['objects'])
+        s += '\n'
+        s += '%-16s %8s %8s\n' % ('SUM', len(list(set(self.image_ids))), num_objects)
+        return s
+
 
     def load_hdf5_dataset(self, verbose=True):
         '''
@@ -539,13 +584,15 @@ class DataGenerator:
         if ret:
             return self.images, self.filenames, self.labels, self.image_ids, self.eval_neutral
 
+
     def parse_json(self,
                    images_dirs,
                    annotations_filenames,
                    ground_truth_available=False,
                    include_classes='all',
                    ret=False,
-                   verbose=True):
+                   verbose=True,
+                   max_imgs=None):
         '''
         This is an JSON parser for the MS COCO datasets. It might be applicable to other datasets with minor changes to
         the code, but in its current form it expects the JSON format of the MS COCO datasets.
@@ -577,6 +624,7 @@ class DataGenerator:
         self.filenames = []
         self.image_ids = []
         self.labels = []
+        self.not_found_images = []
         if not ground_truth_available:
             self.labels = None
 
@@ -593,6 +641,10 @@ class DataGenerator:
         self.classes_to_names.append('background') # Need to add the background class first so that the indexing is right.
         self.cats_to_classes = {} # A dictionary that maps between the original (keys) and the transformed IDs (values)
         self.classes_to_cats = {} # A dictionary that maps between the transformed (keys) and the original IDs (values)
+
+        # sort categories by name prevents id missmatching betwenn multiple loaded files
+        annotations['categories'] = sorted(annotations['categories'], key=lambda k: k['name'])
+
         for i, cat in enumerate(annotations['categories']):
             self.cats_to_names[cat['id']] = cat['name']
             self.classes_to_names.append(cat['name'])
@@ -617,8 +669,19 @@ class DataGenerator:
 
             # Loop over all images in this dataset.
             for img in it:
+                # max images are set we have more data than we need
+                if max_imgs is not None and len(self.image_ids) >= max_imgs:
+                    continue
+                
+                # delete params
+                file_name = img['file_name'].split('?')[0]
 
-                self.filenames.append(os.path.join(images_dir, img['file_name']))
+                # goto next image if image file not existent
+                if not os.path.exists(os.path.join(images_dir, file_name)):
+                    self.not_found_images.append(os.path.join(images_dir, file_name))
+                    continue
+
+                self.filenames.append(os.path.join(images_dir, file_name))
                 self.image_ids.append(img['id'])
 
                 if ground_truth_available:
@@ -638,7 +701,7 @@ class DataGenerator:
                         # Compute `xmax` and `ymax`.
                         xmax = xmin + width
                         ymax = ymin + height
-                        item_dict = {'image_name': img['file_name'],
+                        item_dict = {'image_name': file_name,
                                      'image_id': img['id'],
                                      'class_id': class_id,
                                      'xmin': xmin,
@@ -661,8 +724,12 @@ class DataGenerator:
                 with Image.open(filename) as image:
                     self.images.append(np.array(image, dtype=np.uint8))
 
+        if len(self.not_found_images) > 0:
+            print('%s images not found.' % (len(self.not_found_images)))
+
         if ret:
             return self.images, self.filenames, self.labels, self.image_ids
+
 
     def create_hdf5_dataset(self,
                             file_path='dataset.h5',
@@ -1170,8 +1237,7 @@ class DataGenerator:
             if 'inverse_transform' in returns: ret.append(batch_inverse_transforms)
             if 'original_images' in returns: ret.append(batch_original_images)
             if 'original_labels' in returns: ret.append(batch_original_labels)
-
-            yield ret
+            yield tuple(ret)
 
     def save_dataset(self,
                      filenames_path='filenames.pkl',
@@ -1218,3 +1284,11 @@ class DataGenerator:
             The number of images in the dataset.
         '''
         return self.dataset_size
+
+    
+    def get_dataset_classes(self):
+        '''
+        Returns:
+            A list of classes used in the dataset.
+        '''
+        return list(self.classes_to_names.values())
